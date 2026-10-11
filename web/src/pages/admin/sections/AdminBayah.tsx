@@ -12,7 +12,7 @@ export default function AdminBayah() {
 
   async function updateStatus(id: string, status: string) {
     const updated = await api.admin.bayah.updateStatus(id, status)
-    setItems(items.map((b) => b.id === id ? { ...b, ...updated } : b))
+    setItems(items.map((b) => b.id === id ? { ...b, ...(updated as BayahRequest) } : b))
   }
 
   return (

@@ -1,5 +1,4 @@
 import { Link, Routes, Route, useNavigate } from 'react-router-dom'
-import { api } from '../../lib/api'
 import AdminAnnouncements from './sections/AdminAnnouncements'
 import AdminQuestions from './sections/AdminQuestions'
 import AdminBayah from './sections/AdminBayah'
