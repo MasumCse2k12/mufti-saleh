@@ -1,257 +1,195 @@
 // =============================================================================
-//  Mufti Saleh — build & deploy pipeline
-// =============================================================================
+//  Mufti Saleh — docker compose deployment pipeline
 //
-//  Builds server/ and web/, pushes Docker images (optional), deploys to the
-//  production server via SSH on `main`.
-//
-// -----------------------------------------------------------------------------
-//  A. What the Jenkins machine needs
-// -----------------------------------------------------------------------------
-//   - Plugins: Pipeline, Git, Docker Pipeline, SSH Agent.
-//   - Docker available to the Jenkins user:  sudo usermod -aG docker jenkins
-//   - SSH key on the deploy server:
-//       ssh-keygen -t ed25519 -C "jenkins@mufti-saleh"
-//       ssh-copy-id -i ~/.ssh/id_ed25519.pub deploy@<server>
-//     Then add the private key in Jenkins:
-//       Manage Jenkins → Credentials → Global → Add → SSH Username with private key
-//       ID: mufti-saleh-deploy-key   Username: deploy
+//  Builds and deploys the full stack (API, Web) on the server itself.
+//  Jenkins must be running on the same machine as the deployment target.
 //
 // -----------------------------------------------------------------------------
-//  B. Required Jenkins credential
+//  A. Server / Jenkins prerequisites
 // -----------------------------------------------------------------------------
-//   Secret file · ID: MUFTISALEH_ENV_FILE
-//     Upload your filled muftisaleh.env as a secret file. It is SCP'd to the
-//     server as /opt/mufti-saleh/.env before every compose up.
-//
-//
-// -----------------------------------------------------------------------------
-//  C. Optional: Docker registry
-// -----------------------------------------------------------------------------
-//   Leave DOCKER_REGISTRY empty to build images on the agent and rsync them to
-//   the server with `docker save | ssh docker load`. Set it to push instead:
-//       ghcr.io/your-org   or   docker.io/your-dockerhub
-//   Then add:
-//       Kind: Username with password
-//       ID:   docker-registry
-//   and the pipeline will push and pull normally.
+//   1. Docker + Compose v2 installed; jenkins user in the docker group:
+//        sudo usermod -aG docker jenkins && sudo systemctl restart jenkins
+//   2. Jenkins plugins: Pipeline, Git, Credentials Binding
 //
 // -----------------------------------------------------------------------------
-//  D. Create the job
+//  B. One credential to add in Jenkins
 // -----------------------------------------------------------------------------
-//   Jenkins → New Item → Multibranch Pipeline
-//     Branch Sources → Git → https://github.com/your-org/mufti-saleh.git
-//     Build Configuration → Script Path: Jenkinsfile
-//     Scan Triggers → Periodically: 5 minutes  (or set up a webhook)
+//   Manage Jenkins → Credentials → System → Global → Add credential
+//     Kind:  Secret file
+//     File:  your filled muftisaleh.env
+//     ID:    MUFTISALEH_ENV_FILE        ← must match exactly
+//
+// -----------------------------------------------------------------------------
+//  C. Create the Jenkins job
+// -----------------------------------------------------------------------------
+//   New Item → Pipeline → OK
+//   Pipeline section:
+//     Definition:   Pipeline script from SCM
+//     SCM:          Git
+//     URL:          https://github.com/your-org/mufti-saleh.git
+//     Branch:       */main
+//     Script Path:  Jenkinsfile
+//   Triggers: Poll SCM or add a GitHub webhook.
+//   Save → Build Now.
 // =============================================================================
 
 pipeline {
     agent any
 
     options {
-        buildDiscarder(logRotator(numToKeepStr: '10'))
-        timeout(time: 45, unit: 'MINUTES')
         disableConcurrentBuilds()
+        buildDiscarder(logRotator(numToKeepStr: '15'))
+        timeout(time: 30, unit: 'MINUTES')
         timestamps()
     }
 
     environment {
-        DEPLOY_HOST    = '107.167.94.230'
-        DEPLOY_USER    = 'deploy'
-        DEPLOY_DIR     = '/opt/mufti-saleh'
-        // Set to e.g. 'ghcr.io/your-org' to push images; leave empty to scp them.
-        DOCKER_REGISTRY = ''
-        IMAGE_API      = 'mufti-saleh/api'
-        IMAGE_WEB      = 'mufti-saleh/web'
+        COMPOSE_FILE = 'docker-compose.prod.yml'
+        APP_NAME     = 'mufti-saleh'
     }
 
     stages {
 
+        // ------------------------------------------------------------------
         stage('Checkout') {
+        // ------------------------------------------------------------------
             steps {
-                script {
-                    checkout scm
-                    env.TARGET_BRANCH  = env.BRANCH_NAME?.trim() ?: 'main'
-                    env.IMAGE_TAG      = sh(script: 'git rev-parse --short=8 HEAD', returnStdout: true).trim()
-                    env.IMAGE_BRANCH_TAG = env.TARGET_BRANCH.replaceAll('[^A-Za-z0-9_.-]', '-')
-                    echo "Branch: ${env.TARGET_BRANCH}  Tag: ${env.IMAGE_TAG}"
-                }
-                sh 'git --no-pager log -1 --pretty="%h %an %s"'
+                checkout scm
             }
         }
 
-        stage('Build & Test') {
-            parallel {
-                stage('Frontend') {
-                    steps {
-                        dir('web') {
-                            sh 'npm ci'
-                            sh 'npm run typecheck'
-                            sh 'npm run build'
-                        }
-                    }
-                }
-                stage('Backend') {
-                    steps {
-                        dir('server') {
-                            sh './gradlew test --no-daemon'
-                        }
-                    }
-                    post {
-                        always {
-                            junit allowEmptyResults: true, testResults: 'server/build/test-results/**/*.xml'
-                        }
-                    }
-                }
-            }
-        }
-
-        stage('Docker Build') {
-            steps {
-                script {
-                    withEnv(['DOCKER_BUILDKIT=1']) {
-                        sh """
-                            docker build -t ${IMAGE_API}:${env.IMAGE_TAG} \
-                                         -t ${IMAGE_API}:${env.IMAGE_BRANCH_TAG} \
-                                         server
-                        """
-                        sh """
-                            docker build -t ${IMAGE_WEB}:${env.IMAGE_TAG} \
-                                         -t ${IMAGE_WEB}:${env.IMAGE_BRANCH_TAG} \
-                                         web
-                        """
-                    }
-                }
-            }
-        }
-
-        stage('Smoke Test') {
-            steps {
-                sh """
-                    set -e
-                    cid=\$(docker run -d ${IMAGE_WEB}:${env.IMAGE_TAG})
-                    echo "\$cid" > .web-cid
-                    for i in \$(seq 1 15); do
-                        docker exec "\$cid" wget -qO /dev/null http://127.0.0.1/ && break
-                        sleep 1
-                    done
-                    for path in / /admin; do
-                        docker exec "\$cid" wget -qO /dev/null "http://127.0.0.1\$path"
-                        echo "\$path -> ok"
-                    done
-                """
-            }
-            post {
-                failure {
-                    sh '[ -f .web-cid ] && docker logs "\$(cat .web-cid)" 2>&1 | tail -40 || true'
-                }
-                cleanup {
-                    sh '[ -f .web-cid ] && docker rm -f "\$(cat .web-cid)" >/dev/null 2>&1 || true; rm -f .web-cid'
-                }
-            }
-        }
-
-        stage('Push Images') {
-            when {
-                allOf {
-                    branch 'main'
-                    expression { return env.DOCKER_REGISTRY?.trim() }
-                }
-            }
-            steps {
-                withCredentials([usernamePassword(credentialsId: 'docker-registry',
-                        usernameVariable: 'REGISTRY_USER', passwordVariable: 'REGISTRY_TOKEN')]) {
-                    sh 'echo "$REGISTRY_TOKEN" | docker login "${DOCKER_REGISTRY%%/*}" -u "$REGISTRY_USER" --password-stdin'
-                }
-                script {
-                    for (img in [env.IMAGE_API, env.IMAGE_WEB]) {
-                        for (tag in [env.IMAGE_TAG, env.IMAGE_BRANCH_TAG]) {
-                            sh "docker tag  ${img}:${tag} ${env.DOCKER_REGISTRY}/${img}:${tag}"
-                            sh "docker push ${env.DOCKER_REGISTRY}/${img}:${tag}"
-                        }
-                    }
-                }
-            }
-        }
-
-        stage('Deploy') {
-            when { branch 'main' }
+        // ------------------------------------------------------------------
+        stage('Prepare .env') {
+        // ------------------------------------------------------------------
             steps {
                 withCredentials([file(credentialsId: 'MUFTISALEH_ENV_FILE', variable: 'ENV_FILE')]) {
-                    sshagent(['mufti-saleh-deploy-key']) {
-                        script {
-                            // Upload .env
-                            sh "scp -o StrictHostKeyChecking=no \$ENV_FILE ${DEPLOY_USER}@${DEPLOY_HOST}:${DEPLOY_DIR}/.env"
-
-                            if (env.DOCKER_REGISTRY?.trim()) {
-                                // Registry mode: pull on server
-                                sh """
-                                    ssh -o StrictHostKeyChecking=no ${DEPLOY_USER}@${DEPLOY_HOST} '
-                                        cd ${DEPLOY_DIR} &&
-                                        export IMAGE_TAG=${env.IMAGE_TAG} &&
-                                        export REGISTRY=${env.DOCKER_REGISTRY} &&
-                                        docker compose -f docker-compose.prod.yml pull &&
-                                        docker compose -f docker-compose.prod.yml up -d --remove-orphans
-                                    '
-                                """
-                            } else {
-                                // No registry: stream images directly to the server
-                                sh """
-                                    docker save ${IMAGE_API}:${env.IMAGE_TAG} ${IMAGE_WEB}:${env.IMAGE_TAG} | \
-                                    ssh -o StrictHostKeyChecking=no ${DEPLOY_USER}@${DEPLOY_HOST} 'docker load'
-                                """
-                                sh """
-                                    ssh -o StrictHostKeyChecking=no ${DEPLOY_USER}@${DEPLOY_HOST} '
-                                        cd ${DEPLOY_DIR} &&
-                                        export IMAGE_TAG=${env.IMAGE_TAG} &&
-                                        export REGISTRY=mufti-saleh &&
-                                        docker compose -f docker-compose.prod.yml up -d --remove-orphans
-                                    '
-                                """
-                            }
-                        }
-                    }
+                    sh 'cp "$ENV_FILE" .env'
                 }
+                sh '''
+                    set -e
+                    for var in JWT_SECRET DB_URL DB_PASSWORD BOOTSTRAP_PASSWORD CORS_ORIGINS; do
+                        grep -q "^${var}=" .env \
+                            || { echo "ERROR: ${var} missing from .env"; exit 1; }
+                        val=$(grep "^${var}=" .env | cut -d= -f2-)
+                        [ -n "$val" ] \
+                            || { echo "ERROR: ${var} is empty in .env"; exit 1; }
+                    done
+
+                    dupes=$(grep -oE "^[A-Za-z_][A-Za-z0-9_]*=" .env | sort | uniq -d || true)
+                    [ -z "$dupes" ] \
+                        || { echo "ERROR: duplicate keys in .env: $dupes"; exit 1; }
+
+                    echo ".env validated."
+                '''
             }
         }
 
-        stage('Health Check') {
-            when { branch 'main' }
+        // ------------------------------------------------------------------
+        stage('Build application images') {
+        // ------------------------------------------------------------------
             steps {
-                sshagent(['mufti-saleh-deploy-key']) {
-                    sh """
-                        for i in \$(seq 1 12); do
-                            STATUS=\$(ssh -o StrictHostKeyChecking=no ${DEPLOY_USER}@${DEPLOY_HOST} \
-                                'curl -sf http://localhost:8082/actuator/health | python3 -c "import sys,json; print(json.load(sys.stdin)[\"status\"])" 2>/dev/null || echo DOWN')
-                            echo "Attempt \$i: \$STATUS"
-                            [ "\$STATUS" = "UP" ] && exit 0
-                            sleep 10
-                        done
-                        echo "Health check failed" && exit 1
-                    """
+                sh '''
+                    DOCKER_BUILDKIT=1 \
+                    docker compose -f ${COMPOSE_FILE} -p ${APP_NAME} \
+                        build --pull api
+
+                    DOCKER_BUILDKIT=1 \
+                    docker compose -f ${COMPOSE_FILE} -p ${APP_NAME} \
+                        build --pull --no-cache web
+                '''
+            }
+        }
+
+        // ------------------------------------------------------------------
+        stage('Deploy') {
+        // ------------------------------------------------------------------
+            steps {
+                sh '''
+                    docker compose -f ${COMPOSE_FILE} -p ${APP_NAME} \
+                        up -d --remove-orphans --no-build
+                '''
+            }
+        }
+
+        // ------------------------------------------------------------------
+        stage('Container Status') {
+        // ------------------------------------------------------------------
+            steps {
+                sh '''
+                    echo "=== Running containers ==="
+                    docker ps --format "table {{.Names}}\t{{.Status}}\t{{.Ports}}"
+                    echo "=== Stack containers ==="
+                    docker ps -a --filter "name=${APP_NAME}" --format "table {{.Names}}\t{{.Status}}\t{{.Ports}}"
+                    echo "=== Web container logs ==="
+                    docker logs ${APP_NAME}-web-1 --tail=30 2>&1 || true
+                '''
+            }
+        }
+
+        // ------------------------------------------------------------------
+        stage('Health Check') {
+        // ------------------------------------------------------------------
+            steps {
+                script {
+                    def apiPort = sh(script: "grep '^API_PORT=' .env | cut -d= -f2- || echo '8082'", returnStdout: true).trim() ?: '8082'
+                    def healthy = false
+                    for (int i = 1; i <= 18; i++) {
+                        sleep(time: 5, unit: 'SECONDS')
+                        def rc = sh(
+                            script: "curl -fs http://127.0.0.1:${apiPort}/actuator/health | grep -q '\"status\":\"UP\"'",
+                            returnStatus: true
+                        )
+                        if (rc == 0) { healthy = true; break }
+                        echo "Waiting for API on port ${apiPort}… attempt ${i}/18"
+                    }
+                    if (!healthy) {
+                        error('API did not become healthy within 90 s.')
+                    }
                 }
+                script {
+                    def webPort = sh(script: "grep '^WEB_PORT=' .env | cut -d= -f2- || echo '3000'", returnStdout: true).trim() ?: '3000'
+                    def webUp = false
+                    for (int i = 1; i <= 12; i++) {
+                        sleep(time: 5, unit: 'SECONDS')
+                        def rc = sh(
+                            script: "curl -fso /dev/null http://127.0.0.1:${webPort}",
+                            returnStatus: true
+                        )
+                        if (rc == 0) { webUp = true; break }
+                        echo "Waiting for web on port ${webPort}… attempt ${i}/12"
+                    }
+                    if (!webUp) {
+                        error("Web did not become reachable within 60 s.")
+                    }
+                }
+                echo "All services healthy."
+            }
+        }
+
+        // ------------------------------------------------------------------
+        stage('Prune old images') {
+        // ------------------------------------------------------------------
+            steps {
+                sh 'docker image prune -f'
             }
         }
     }
 
     post {
-        always {
-            script {
-                if (env.IMAGE_TAG) {
-                    sh """
-                        docker image rm -f ${IMAGE_API}:${env.IMAGE_TAG} \
-                                         ${IMAGE_API}:${env.IMAGE_BRANCH_TAG} \
-                                         ${IMAGE_WEB}:${env.IMAGE_TAG} \
-                                         ${IMAGE_WEB}:${env.IMAGE_BRANCH_TAG} >/dev/null 2>&1 || true
-                    """
-                }
-            }
-        }
         success {
-            echo "OK  ${env.TARGET_BRANCH ?: 'build'} — ${env.IMAGE_TAG}"
+            echo "Deployment successful — stack '${APP_NAME}' is live."
+            sh 'rm -f .env'
         }
         failure {
-            echo "FAILED  ${env.TARGET_BRANCH ?: 'build'} — see stage log above."
+            echo "Deployment FAILED. Dumping recent container logs…"
+            sh '''
+                docker compose -f ${COMPOSE_FILE} -p ${APP_NAME} \
+                    logs --tail=80 || true
+            '''
+            sh 'rm -f .env'
+        }
+        aborted {
+            sh 'rm -f .env'
         }
     }
 }

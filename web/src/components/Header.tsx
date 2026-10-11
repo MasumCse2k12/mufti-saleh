@@ -7,7 +7,7 @@ export default function Header() {
         <div className="flex items-center gap-4">
           <div className="w-20 h-20 rounded-lg bg-white/10 flex-shrink-0 overflow-hidden">
             <img
-              src="/shaykh-photo.jpg"
+              src="/muftisaleh.png"
               alt="শায়খ আবু সালেহ মুহাম্মাদুল্লাহ"
               className="w-full h-full object-cover"
               onError={(e) => {
