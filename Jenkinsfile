@@ -24,8 +24,6 @@
 //     Upload your filled muftisaleh.env as a secret file. It is SCP'd to the
 //     server as /opt/mufti-saleh/.env before every compose up.
 //
-//   Secret text · ID: mufti-saleh-deploy-host
-//     The IP or hostname of the production server.
 //
 // -----------------------------------------------------------------------------
 //  C. Optional: Docker registry
@@ -58,7 +56,7 @@ pipeline {
     }
 
     environment {
-        DEPLOY_HOST    = credentials('mufti-saleh-deploy-host')
+        DEPLOY_HOST    = '107.167.94.230'
         DEPLOY_USER    = 'deploy'
         DEPLOY_DIR     = '/opt/mufti-saleh'
         // Set to e.g. 'ghcr.io/your-org' to push images; leave empty to scp them.
