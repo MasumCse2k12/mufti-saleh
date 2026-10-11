@@ -27,20 +27,20 @@ import lombok.RequiredArgsConstructor;
 @RequiredArgsConstructor
 public class SecurityConfig {
 
-    /** Paths anyone may GET without a token. */
+    /** Paths anyone may GET without a token (relative to context-path /api). */
     private static final String[] PUBLIC_GET = {
-            "/api/v1/announcements",
-            "/api/v1/announcements/**",
-            "/api/v1/questions",
-            "/api/v1/questions/**",
-            "/api/v1/donations/summary",
-            "/api/v1/bayah/info",
-            "/api/v1/schedule",
-            "/api/v1/schedule/**",
-            "/api/v1/media",
-            "/api/v1/media/**",
-            "/api/v1/masail",
-            "/api/v1/masail/**",
+            "/v1/announcements",
+            "/v1/announcements/**",
+            "/v1/questions",
+            "/v1/questions/**",
+            "/v1/donations/summary",
+            "/v1/bayah/info",
+            "/v1/schedule",
+            "/v1/schedule/**",
+            "/v1/media",
+            "/v1/media/**",
+            "/v1/masail",
+            "/v1/masail/**",
             "/actuator/health/**",
             "/v3/api-docs/**",
             "/swagger-ui/**",
@@ -59,12 +59,12 @@ public class SecurityConfig {
                 .authorizeHttpRequests(auth -> auth
                         .requestMatchers(HttpMethod.OPTIONS, "/**").permitAll()
                         .requestMatchers(HttpMethod.GET, PUBLIC_GET).permitAll()
-                        .requestMatchers("/api/v1/auth/**").permitAll()
+                        .requestMatchers("/v1/auth/**").permitAll()
                         // Public submissions
-                        .requestMatchers(HttpMethod.POST, "/api/v1/questions").permitAll()
-                        .requestMatchers(HttpMethod.POST, "/api/v1/bayah").permitAll()
+                        .requestMatchers(HttpMethod.POST, "/v1/questions").permitAll()
+                        .requestMatchers(HttpMethod.POST, "/v1/bayah").permitAll()
                         // Everything else under /admin requires a token
-                        .requestMatchers("/api/v1/admin/**").hasRole("ADMIN")
+                        .requestMatchers("/v1/admin/**").hasRole("ADMIN")
                         .anyRequest().hasRole("ADMIN"))
                 .exceptionHandling(handling -> handling
                         .authenticationEntryPoint((request, response, ex) -> {
@@ -102,7 +102,7 @@ public class SecurityConfig {
         config.setMaxAge(3600L);
 
         UrlBasedCorsConfigurationSource source = new UrlBasedCorsConfigurationSource();
-        source.registerCorsConfiguration("/api/**", config);
+        source.registerCorsConfiguration("/**", config);
         return source;
     }
 }

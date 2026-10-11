@@ -23,7 +23,7 @@ import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 
 @RestController
-@RequestMapping("/api/v1")
+@RequestMapping("/v1")
 @Tag(name = "Auth", description = "Admin authentication")
 @RequiredArgsConstructor
 public class AdminAuthController {

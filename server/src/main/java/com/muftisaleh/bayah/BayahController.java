@@ -25,7 +25,7 @@ import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 
 @RestController
-@RequestMapping("/api/v1")
+@RequestMapping("/v1")
 @Tag(name = "Bay'ah Requests")
 @RequiredArgsConstructor
 public class BayahController {

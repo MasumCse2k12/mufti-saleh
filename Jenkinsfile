@@ -136,7 +136,7 @@ pipeline {
                     for (int i = 1; i <= 18; i++) {
                         sleep(time: 5, unit: 'SECONDS')
                         def rc = sh(
-                            script: "curl -fs http://127.0.0.1:${apiPort}/actuator/health | grep -q '\"status\":\"UP\"'",
+                            script: "curl -fs http://127.0.0.1:${apiPort}/api/actuator/health | grep -q '\"status\":\"UP\"'",
                             returnStatus: true
                         )
                         if (rc == 0) { healthy = true; break }
