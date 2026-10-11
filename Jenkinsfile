@@ -106,15 +106,18 @@ pipeline {
         stage('Deploy') {
             when { branch 'main' }
             steps {
-                sshagent(['mufti-saleh-deploy-key']) {
-                    sh """
-                        ssh -o StrictHostKeyChecking=no ${DEPLOY_USER}@${DEPLOY_HOST} '
-                            cd /opt/mufti-saleh &&
-                            export IMAGE_TAG=${IMAGE_TAG} &&
-                            docker compose -f docker-compose.prod.yml pull &&
-                            docker compose -f docker-compose.prod.yml up -d --remove-orphans
-                        '
-                    """
+                withCredentials([file(credentialsId: 'MUFTISALEH_ENV_FILE', variable: 'ENV_FILE')]) {
+                    sshagent(['mufti-saleh-deploy-key']) {
+                        sh "scp -o StrictHostKeyChecking=no \$ENV_FILE ${DEPLOY_USER}@${DEPLOY_HOST}:/opt/mufti-saleh/.env"
+                        sh """
+                            ssh -o StrictHostKeyChecking=no ${DEPLOY_USER}@${DEPLOY_HOST} '
+                                cd /opt/mufti-saleh &&
+                                export IMAGE_TAG=${IMAGE_TAG} &&
+                                docker compose -f docker-compose.prod.yml pull &&
+                                docker compose -f docker-compose.prod.yml up -d --remove-orphans
+                            '
+                        """
+                    }
                 }
             }
         }
@@ -126,7 +129,7 @@ pipeline {
                     sh """
                         for i in \$(seq 1 12); do
                             STATUS=\$(ssh -o StrictHostKeyChecking=no ${DEPLOY_USER}@${DEPLOY_HOST} \
-                                'curl -sf http://localhost:8081/actuator/health | python3 -c "import sys,json; print(json.load(sys.stdin)[\"status\"])" 2>/dev/null || echo DOWN')
+                                'curl -sf http://localhost:8082/actuator/health | python3 -c "import sys,json; print(json.load(sys.stdin)[\"status\"])" 2>/dev/null || echo DOWN')
                             echo "Attempt \$i: \$STATUS"
                             [ "\$STATUS" = "UP" ] && exit 0
                             sleep 10
