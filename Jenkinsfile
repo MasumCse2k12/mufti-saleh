@@ -143,10 +143,14 @@ pipeline {
 
     post {
         always {
-            sh "docker rmi ${API_IMAGE} ${WEB_IMAGE} || true"
+            script {
+                if (env.API_IMAGE) {
+                    sh "docker rmi ${env.API_IMAGE} ${env.WEB_IMAGE} || true"
+                }
+            }
         }
         failure {
-            echo "Build failed for branch ${env.BRANCH_NAME} — commit ${env.GIT_COMMIT}"
+            echo "Build failed for branch ${env.BRANCH_NAME ?: 'unknown'} — commit ${env.GIT_COMMIT ?: 'unknown'}"
         }
     }
 }
