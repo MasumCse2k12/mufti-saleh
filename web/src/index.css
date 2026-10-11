@@ -1,0 +1,11 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  font-family: 'Hind Siliguri', sans-serif;
+}
+
+body {
+  @apply bg-gray-50 text-gray-900;
+}

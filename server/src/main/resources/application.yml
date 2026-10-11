@@ -1,0 +1,103 @@
+spring:
+  application:
+    name: mufti-saleh-service
+
+  autoconfigure:
+    exclude: org.springframework.boot.security.autoconfigure.UserDetailsServiceAutoConfiguration
+
+  datasource:
+    url: ${DB_URL:jdbc:postgresql://localhost:5432/mufti_saleh}
+    username: ${DB_USER:mufti}
+    password: ${DB_PASSWORD:mufti}
+    hikari:
+      maximum-pool-size: ${DB_POOL_MAX:16}
+      minimum-idle: 4
+      connection-timeout: 5000
+      pool-name: mufti-saleh-pool
+
+  jpa:
+    open-in-view: false
+    hibernate:
+      ddl-auto: validate
+    properties:
+      hibernate:
+        jdbc:
+          batch_size: 50
+          time_zone: UTC
+        order_inserts: true
+        order_updates: true
+        query:
+          fail_on_pagination_over_collection_fetch: true
+
+  flyway:
+    enabled: true
+    locations: classpath:db/migration
+    baseline-on-migrate: true
+
+  data:
+    redis:
+      host: ${REDIS_HOST:localhost}
+      port: ${REDIS_PORT:6379}
+      password: ${REDIS_PASSWORD:}
+      timeout: 2s
+      lettuce:
+        pool:
+          enabled: true
+          max-active: 16
+          max-idle: 8
+
+  cache:
+    type: redis
+
+  threads:
+    virtual:
+      enabled: true
+
+server:
+  port: ${SERVER_PORT:8080}
+  shutdown: graceful
+  error:
+    include-message: never
+  compression:
+    enabled: true
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info,metrics
+  endpoint:
+    health:
+      probes:
+        enabled: true
+      show-details: when-authorized
+
+springdoc:
+  swagger-ui:
+    path: /swagger-ui.html
+    operations-sorter: alpha
+    tags-sorter: alpha
+    enabled: ${SWAGGER_ENABLED:true}
+  api-docs:
+    path: /v3/api-docs
+    enabled: ${SWAGGER_ENABLED:true}
+
+app:
+  jwt:
+    secret: ${JWT_SECRET:change-me-in-production-must-be-at-least-32-bytes!!}
+    issuer: mufti-saleh
+    admin-access-ttl: PT8H
+  security:
+    max-failed-logins: 5
+    lockout-duration: PT15M
+  cors:
+    allowed-origins: ${CORS_ORIGINS:http://localhost:5173,http://localhost:3000}
+  bootstrap:
+    enabled: true
+    username: ${BOOTSTRAP_ADMIN_USERNAME:admin}
+    password: ${BOOTSTRAP_ADMIN_PASSWORD:}
+    display-name: ${BOOTSTRAP_ADMIN_NAME:Super Admin}
+
+logging:
+  level:
+    com.muftisaleh: ${LOG_LEVEL:INFO}
