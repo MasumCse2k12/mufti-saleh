@@ -14,7 +14,7 @@ public interface AnnouncementRepository extends JpaRepository<Announcement, UUID
     @Query("""
             select a from Announcement a
             where (a.expiresAt is null or a.expiresAt > :now)
-              and (:cursor is null or a.publishedAt < :cursor)
+              and (cast(:cursor as Instant) is null or a.publishedAt < :cursor)
             order by a.pinned desc, a.publishedAt desc
             """)
     List<Announcement> findActive(@Param("now") Instant now,

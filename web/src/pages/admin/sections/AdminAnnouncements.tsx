@@ -8,14 +8,16 @@ export default function AdminAnnouncements() {
   const [body, setBody] = useState('')
   const [pinned, setPinned] = useState(false)
   const [loading, setLoading] = useState(false)
+  const [error, setError] = useState<string | null>(null)
 
   useEffect(() => {
-    api.admin.announcements.list().then(setItems)
+    api.admin.announcements.list().then(setItems).catch(() => setError('ঘোষণা লোড করতে সমস্যা হয়েছে।'))
   }, [])
 
   async function handleCreate(e: React.FormEvent) {
     e.preventDefault()
     setLoading(true)
+    setError(null)
     try {
       const created = await api.admin.announcements.create({
         title, body, pinned,
@@ -23,6 +25,9 @@ export default function AdminAnnouncements() {
       })
       setItems([created, ...items])
       setTitle(''); setBody(''); setPinned(false); setShowForm(false)
+    } catch (err: unknown) {
+      const msg = (err as { messageBn?: string; detail?: string })
+      setError(msg.messageBn ?? msg.detail ?? 'ঘোষণা সংরক্ষণ করতে সমস্যা হয়েছে।')
     } finally {
       setLoading(false)
     }
@@ -45,6 +50,12 @@ export default function AdminAnnouncements() {
           + নতুন
         </button>
       </div>
+
+      {error && (
+        <div className="bg-red-50 border border-red-200 text-red-700 rounded-lg px-4 py-3 text-sm font-bn mb-4">
+          {error}
+        </div>
+      )}
 
       {showForm && (
         <form onSubmit={handleCreate} className="bg-white rounded-xl p-4 shadow-sm mb-4 space-y-3">

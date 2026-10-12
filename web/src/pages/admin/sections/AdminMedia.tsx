@@ -9,20 +9,39 @@ export default function AdminMedia() {
   const [type, setType] = useState('BAYAAN')
   const [description, setDescription] = useState('')
   const [loading, setLoading] = useState(false)
+  const [error, setError] = useState<string | null>(null)
 
-  useEffect(() => { api.media.list().then(setItems) }, [])
+  useEffect(() => { api.media.list().then(setItems).catch(() => setError('মিডিয়া লোড করতে সমস্যা হয়েছে।')) }, [])
+
+  function extractYoutubeId(input: string): string {
+    const trimmed = input.trim()
+    try {
+      const url = new URL(trimmed)
+      if (url.hostname === 'youtu.be') return url.pathname.slice(1)
+      const v = url.searchParams.get('v')
+      if (v) return v
+    } catch {
+      // not a URL — treat as raw ID
+    }
+    return trimmed
+  }
 
   async function handleCreate(e: React.FormEvent) {
     e.preventDefault()
     setLoading(true)
+    setError(null)
     try {
+      const resolvedYoutubeId = youtubeId ? extractYoutubeId(youtubeId) : undefined
       const created = await api.admin.media.create({
-        title, youtubeId: youtubeId || undefined,
+        title, youtubeId: resolvedYoutubeId,
         type, description: description || undefined,
         publishedAt: new Date().toISOString()
       })
       setItems([created as MediaItem, ...items])
       setTitle(''); setYoutubeId(''); setDescription(''); setShowForm(false)
+    } catch (err: unknown) {
+      const msg = (err as { messageBn?: string; detail?: string })
+      setError(msg.messageBn ?? msg.detail ?? 'মিডিয়া সংরক্ষণ করতে সমস্যা হয়েছে।')
     } finally {
       setLoading(false)
     }
@@ -43,6 +62,12 @@ export default function AdminMedia() {
           + নতুন
         </button>
       </div>
+
+      {error && (
+        <div className="bg-red-50 border border-red-200 text-red-700 rounded-lg px-4 py-3 text-sm font-bn mb-4">
+          {error}
+        </div>
+      )}
 
       {showForm && (
         <form onSubmit={handleCreate} className="bg-white rounded-xl p-4 shadow-sm mb-4 space-y-3">
